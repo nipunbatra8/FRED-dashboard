@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 from google.cloud import firestore
+import pydeck as pdk
+from datetime import datetime
 
 st.set_page_config(page_title="First Responder Landing Page", page_icon="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/850170/capsule_616x353.jpg?t=1710854690", layout="wide")
 
@@ -18,14 +20,14 @@ db = firestore.Client.from_service_account_json("firestore-key.json")
 st.header('ProjectName First Responder Dashboard')
 st.write("")
 st.write("")
-st.write("")
 
 # Fetch data from Firestore (assuming the collection is named 'emergencies')
 emergencies_ref = db.collection('emergencies')
 emergencies = emergencies_ref.stream()
 
-# Create a list to hold emergency data
+# Create a list to hold emergency data and coordinates for the map
 emergency_list = []
+all_coordinates = []
 
 for emergency in emergencies:
     emergency_data = emergency.to_dict()
@@ -43,17 +45,22 @@ for emergency in emergencies:
     equipment = emergency_data.get('equipment', 'Unknown')
     number = emergency_data.get('number', 'N/A')
     people = emergency_data.get('people', 0)
+    code = emergency_data.get('code', 'No code')  # Fetching 'code'
+    urgency = emergency_data.get('urgency', 0)    # Fetching 'urgency'
 
-    # Create map data for current emergency location
-    data = {
-        'lat': [lat],
-        'lon': [lon],
-    }
-    df = pd.DataFrame(data)
+    # Collect coordinates for map
+    all_coordinates.append({
+        'lat': lat,
+        'lon': lon,
+        'code': code,
+        'urgency': urgency
+    })
 
     # Store the emergency data in a list for later use
     emergency_list.append({
         'doc_id': doc_id,
+        'lat': lat,
+        'lon': lon,
         'images': [image1, image2, image3],
         'number': number,
         'description': description,
@@ -61,32 +68,89 @@ for emergency in emergencies:
         'condition': condition,
         'current_action': current_action,
         'people': people,
-        'map_data': df,
+        'code': code,
+        'urgency': urgency
     })
 
-# Display three emergencies per row with dividers
-for i in range(0, len(emergency_list), 3):
-    # Create a new container for each row of emergencies
-    cols = st.columns(3)
+# Create a DataFrame with all the coordinates
+df_all_coordinates = pd.DataFrame(all_coordinates)
 
-    for j, emergency in enumerate(emergency_list[i:i+3]):
-        with cols[j % 3]:  # Ensure we don't exceed the number of columns
-            # Create map for the emergency
-            st.map(emergency['map_data'])
+# Create two columns for the layout
+col1, col2 = st.columns([2, 3])  # Adjust ratio as needed (col1: 2, col2: 3 for more space on emergency list)
 
+# Column 1: Master map
+with col1:
+    st.subheader("Master Map of Emergency Locations")
+    
+    initial_view_state = pdk.ViewState(
+        latitude=df_all_coordinates['lat'].mean(),
+        longitude=df_all_coordinates['lon'].mean(),
+        zoom=10,
+        pitch=0,
+    )
+
+    layer = pdk.Layer(
+        'ScatterplotLayer',
+        data=df_all_coordinates,
+        get_position='[lon, lat]',
+        get_color='[200, 30, 0, 160]',
+        get_radius=200,
+    )
+
+    # Render the map with PyDeck
+    st.pydeck_chart(pdk.Deck(
+        layers=[layer],
+        initial_view_state=initial_view_state,
+    ))
+
+# Column 2: Emergency Details
+with col2:
+    @st.dialog("Details:")
+    def show_emergency_details(emergency):
+        st.write(f"**Phone Number:** {emergency['number']}")
+        st.write(f"**Description:** {emergency['description']}")
+        st.write(f"**Equipment Needed:** {emergency['equipment']}")
+        st.write(f"**Victim Condition:** {emergency['condition']}")
+        st.write(f"**Current Action:** {emergency['current_action']}")
+        st.write(f"**Number of People:** {emergency['people']}")
+        notes = st.text_input(label="Notes: ", key=emergency['doc_id'])
+
+        # Show images if they exist
+        if emergency['images'][0]:
             st.image(emergency['images'][0])
+        if emergency['images'][1]:
             st.image(emergency['images'][1])
+        if emergency['images'][2]:
             st.image(emergency['images'][2])
-            st.write(f"**Phone Number:** {emergency['number']}")
-            st.write(f"**Description:** {emergency['description']}")
-            st.write(f"**Equipment Needed:** {emergency['equipment']}")
-            st.write(f"**Victim Condition:** {emergency['condition']}")
-            st.write(f"**Current Action:** {emergency['current_action']}")
-            st.write(f"**Number of People:** {emergency['people']}")
 
-            # Dispatch button
-            if st.button('Dispatch', key=emergency['doc_id']):
-                st.success('Sent to first responders!', icon="✅")
+        # Dispatch button
+        if st.button('Responded'):
+            # Create a report document in Firestore
+            report_data = {
+                'emergency_id': emergency['doc_id'],
+                'number': emergency['number'],
+                'description': emergency['description'],
+                'notes': notes,
+                'equipment': emergency['equipment'],
+                'condition': emergency['condition'],
+                'current_action': emergency['current_action'],
+                'people': emergency['people'],
+                'code': emergency['code'],
+                'urgency': emergency['urgency'],
+                'timestamp': datetime.now(),
+            }
+            db.collection('reports').add(report_data)
+            
+            # Delete the emergency document
+            db.collection('emergencies').document(emergency['doc_id']).delete()
+            
+            # Show success message
+            st.success(f'Report created and emergency {emergency["code"]} resolved!')
+    st.subheader("Emergency List")
 
-    # Divider between rows of emergencies
-    st.markdown("---")
+    # Display emergency 'code' and 'urgency' initially
+    for idx, emergency in enumerate(emergency_list):
+        # Create a clickable button for each emergency code and urgency
+        if st.button(f"Code: {emergency['code']}, Urgency: {emergency['urgency']}", key=f"emergency_{idx}"):
+            # Show the details in a dialog/modal
+            show_emergency_details(emergency)
