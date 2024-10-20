@@ -4,7 +4,7 @@ from google.cloud import firestore
 import pydeck as pdk
 from datetime import datetime
 
-st.set_page_config(page_title="First Responder Landing Page", page_icon="https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/850170/capsule_616x353.jpg?t=1710854690", layout="wide")
+st.set_page_config(page_title="First Responder Landing Page", page_icon="logo-color.png", layout="wide")
 
 hide_default_format = """
        <style>
@@ -17,7 +17,7 @@ st.markdown(hide_default_format, unsafe_allow_html=True)
 # Authenticate to Firestore with the JSON account key.
 db = firestore.Client.from_service_account_json("firestore-key.json")
 
-st.header('ProjectName First Responder Dashboard')
+st.header(':red[FRED] First Responder Dashboard')
 st.write("")
 st.write("")
 
@@ -76,35 +76,35 @@ for emergency in emergencies:
 df_all_coordinates = pd.DataFrame(all_coordinates)
 
 # Create two columns for the layout
-col1, col2 = st.columns([2, 3])  # Adjust ratio as needed (col1: 2, col2: 3 for more space on emergency list)
+# col1, col2 = st.columns([4, 1])  # Adjust ratio as needed (col1: 2, col2: 3 for more space on emergency list)
 
 # Column 1: Master map
-with col1:
-    st.subheader("Master Map of Emergency Locations")
-    
-    initial_view_state = pdk.ViewState(
-        latitude=df_all_coordinates['lat'].mean(),
-        longitude=df_all_coordinates['lon'].mean(),
-        zoom=10,
-        pitch=0,
-    )
+# with col1:
+# st.subheader("Master Map of Emergency Locations")
 
-    layer = pdk.Layer(
-        'ScatterplotLayer',
-        data=df_all_coordinates,
-        get_position='[lon, lat]',
-        get_color='[200, 30, 0, 160]',
-        get_radius=200,
-    )
+initial_view_state = pdk.ViewState(
+    latitude=df_all_coordinates['lat'].mean(),
+    longitude=df_all_coordinates['lon'].mean(),
+    zoom=10,
+    pitch=0,
+)
 
-    # Render the map with PyDeck
-    st.pydeck_chart(pdk.Deck(
-        layers=[layer],
-        initial_view_state=initial_view_state,
-    ))
+layer = pdk.Layer(
+    'ScatterplotLayer',
+    data=df_all_coordinates,
+    get_position='[lon, lat]',
+    get_color='[200, 30, 0, 160]',
+    get_radius=200,
+)
+
+# Render the map with PyDeck
+st.pydeck_chart(pdk.Deck(
+    layers=[layer],
+    initial_view_state=initial_view_state,
+))
 
 # Column 2: Emergency Details
-with col2:
+with st.sidebar:
     @st.dialog("Details:")
     def show_emergency_details(emergency):
         st.write(f"**Phone Number:** {emergency['number']}")
@@ -146,6 +146,7 @@ with col2:
             
             # Show success message
             st.success(f'Report created and emergency {emergency["code"]} resolved!')
+    st.image('logo-color.png')
     st.subheader("Emergency List")
 
     # Display emergency 'code' and 'urgency' initially
